@@ -66,7 +66,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #else
         SUUpdater.shared().feedURL = URL(string: "https://altstore.io/altserver/sparkle-macos.xml")
         #endif
-        
+
+        // Official builds don't include the -80045 anisette fix, so never install them automatically.
+        SUUpdater.shared().automaticallyChecksForUpdates = false
+        SUUpdater.shared().automaticallyDownloadsUpdates = false
+
         let item = NSStatusBar.system.statusItem(withLength: -1)
         item.menu = self.appMenu
         item.button?.image = NSImage(named: "MenuBarIcon") 

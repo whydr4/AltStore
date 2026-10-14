@@ -435,16 +435,33 @@ private extension ALTDeviceManager
             }
         }
         
-        ALTAppleAPI.shared.authenticate(appleID: appleID, password: password, anisetteData: anisetteData, verificationHandler: handleVerificationCode) { (account, session, error) in
-            if let account = account, let session = session
-            {
-                completionHandler(.success((account, session)))
-            }
-            else
-            {
-                completionHandler(.failure(error ?? ALTAppleAPIError.unknown()))
+        func authenticate(anisetteData: ALTAnisetteData, canResync: Bool)
+        {
+            ALTAppleAPI.shared.authenticate(appleID: appleID, password: password, anisetteData: anisetteData, verificationHandler: handleVerificationCode) { (account, session, error) in
+                if let account = account, let session = session
+                {
+                    completionHandler(.success((account, session)))
+                }
+                else if canResync, let error = error as? ALTAppleAPIError, error.code == .anisetteResyncRequired,
+                        let sim = error.userInfo[ALTAnisetteResyncSIMErrorKey] as? String
+                {
+                    // GrandSlam asked for an anisette resync (hsc 434), so resync once and retry.
+                    AnisetteDataManager.shared.resyncAnisetteData(sim: sim) { (result) in
+                        switch result
+                        {
+                        case .success(let anisetteData): authenticate(anisetteData: anisetteData, canResync: false)
+                        case .failure(let error): completionHandler(.failure(error))
+                        }
+                    }
+                }
+                else
+                {
+                    completionHandler(.failure(error ?? ALTAppleAPIError.unknown()))
+                }
             }
         }
+
+        authenticate(anisetteData: anisetteData, canResync: true)
     }
     
     func fetchTeam(for account: ALTAccount, session: ALTAppleAPISession, completionHandler: @escaping (Result<ALTTeam, Error>) -> Void)

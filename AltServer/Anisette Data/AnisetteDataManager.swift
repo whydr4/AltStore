@@ -65,7 +65,30 @@ class AnisetteDataManager: NSObject
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(AnisetteDataManager.handleAnisetteDataResponse(_:)), name: Notification.Name("com.rileytestut.AltServer.AnisetteDataResponse"), object: nil)
     }
     
+    private let remoteProvider = RemoteAnisetteProvider()
+
     func requestAnisetteData(_ completion: @escaping (Result<ALTAnisetteData, Error>) -> Void)
+    {
+        // Since Oct 2026 GrandSlam rejects macOS client info with -80045, and AOSKit no longer vends anisette data on macOS 27,
+        // so prefer Android-provisioned anisette data from an anisette v3 server and only fall back to local sources.
+        self.requestAnisetteDataFromRemoteServer(resyncSIM: nil) { (result) in
+            switch result
+            {
+            case .success: completion(result)
+            case .failure(let error):
+                Logger.main.error("Failed to fetch anisette data from remote server. \(error.localizedDescription, privacy: .public)")
+                self.requestLocalAnisetteData(completion)
+            }
+        }
+    }
+
+    /// Resyncs the remote ADI state after GrandSlam responded with hsc 434.
+    func resyncAnisetteData(sim: String, completion: @escaping (Result<ALTAnisetteData, Error>) -> Void)
+    {
+        self.requestAnisetteDataFromRemoteServer(resyncSIM: sim, completion: completion)
+    }
+
+    private func requestLocalAnisetteData(_ completion: @escaping (Result<ALTAnisetteData, Error>) -> Void)
     {
         self.requestAnisetteDataFromAOSKit { (result) in
             do
@@ -115,6 +138,24 @@ class AnisetteDataManager: NSObject
 
 private extension AnisetteDataManager
 {
+    func requestAnisetteDataFromRemoteServer(resyncSIM: String?, completion: @escaping (Result<ALTAnisetteData, Error>) -> Void)
+    {
+        self.remoteProvider.fetchHeaders(resyncSIM: resyncSIM) { (result) in
+            completion(result.map { headers in
+                ALTAnisetteData(machineID: headers.machineID,
+                                oneTimePassword: headers.oneTimePassword,
+                                localUserID: headers.localUserID,
+                                routingInfo: headers.routingInfo,
+                                deviceUniqueIdentifier: headers.deviceUniqueIdentifier,
+                                deviceSerialNumber: "0",
+                                deviceDescription: headers.deviceDescription,
+                                date: Date(),
+                                locale: .current,
+                                timeZone: .current)
+            })
+        }
+    }
+
     func requestAnisetteDataFromAOSKit(completion: @escaping (Result<ALTAnisetteData, Error>) -> Void)
     {
         do
